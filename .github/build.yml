@@ -1,0 +1,85 @@
+name: Build Telco Churn Predict
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller pyqt5 pandas numpy scikit-learn matplotlib
+
+    - name: Generate models (Linux)
+      if: runner.os == 'Linux'
+      env:
+        PYTHONUTF8: 1
+        LOKY_MAX_CPU_COUNT: 1
+        OMP_NUM_THREADS: 1
+      run: python train_models.py
+      shell: bash
+
+    - name: Generate models (Windows)
+      if: runner.os == 'Windows'
+      env:
+        PYTHONUTF8: 1
+        PYTHONIOENCODING: utf-8
+        LOKY_MAX_CPU_COUNT: 1
+        OMP_NUM_THREADS: 1
+      run: python train_models.py
+      shell: cmd
+
+    - name: Build with PyInstaller (Windows)
+      if: runner.os == 'Windows'
+      env:
+        PYTHONUTF8: 1
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --name TelcoChurnPredict --add-data "models;models" --collect-all sklearn --collect-all joblib --collect-all threadpoolctl app.py
+      shell: cmd
+
+    - name: Build with PyInstaller (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        pyinstaller --noconfirm --onedir --windowed --name TelcoChurnPredict --add-data "models:models" --collect-all sklearn --collect-all joblib --collect-all threadpoolctl app.py
+      shell: bash
+
+    - name: Archive build (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        Compress-Archive -Path dist\TelcoChurnPredict -DestinationPath TelcoChurnPredict_Windows.zip
+
+    - name: Archive build (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        tar -czvf TelcoChurnPredict_Linux.tar.gz -C dist TelcoChurnPredict
+
+    - name: Upload Windows artifact
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: TelcoChurnPredict_Windows
+        path: TelcoChurnPredict_Windows.zip
+
+    - name: Upload Linux artifact
+      if: runner.os == 'Linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: TelcoChurnPredict_Linux
+        path: TelcoChurnPredict_Linux.tar.gz
